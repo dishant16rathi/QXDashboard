@@ -21,10 +21,15 @@ import dotenv
 import traceback
 
 # Load environment variables
-dotenv.load_dotenv()
-OPEN_AI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Load environment variables
+if "OPENAI_API_KEY" in st.secrets:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+else:
+    dotenv.load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-llm = OpenAI(api_token=OPEN_AI_API_KEY)
+
+llm = OpenAI(api_token=OPENAI_API_KEY)
 
 
 def ai_dashboard():

@@ -38,8 +38,13 @@ from langchain_core.documents import Document
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # Load environment variables
+# if "OPENAI_API_KEY" in st.secrets:
+#     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+# else:
 load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Create a simple in-memory chat message history storage
 class InMemoryChatMessageHistory(BaseChatMessageHistory):
@@ -239,9 +244,31 @@ def execute_code_safely(code: str, df: pd.DataFrame) -> Dict[str, Any]:
         "error": None
     }
     
-    # Add plt.switch_backend if not in code (helps with rendering issues)
-    if 'plt.' in code and 'plt.switch_backend' not in code:
-        code = "plt.switch_backend('Agg')\n" + code
+    class SafeMatplotlib:
+        def __init__(self):
+            self.figure_created = False
+            
+        def figure(self, *args, **kwargs):
+            self.figure_created = True
+            # Return a basic figure that won't cause issues
+            return plt.figure(*args, **kwargs)
+            
+        def __getattr__(self, name):
+            # Handle restricted functions safely
+            if name in ['gca', 'gcf', 'subplot', 'subplots', 'axes']:
+                return lambda *args, **kwargs: None
+            # For other functions, use the actual matplotlib functions
+            return getattr(plt, name)
+    
+    # Add safe matplotlib to locals
+    local_vars["plt"] = SafeMatplotlib()
+    local_vars["sns"] = sns  # Keep seaborn for compatibility
+    
+    # Check if code is trying to save a plot to a path
+    save_fig_pattern = r'(plt\.savefig|fig\.savefig)\([\'"]([^\'"]+)[\'"]\)'
+    save_match = re.search(save_fig_pattern, code)
+    if save_match:
+        result["plot_path"] = save_match.group(2)
     
     # Check if code looks dangerous
     dangerous_modules = ['os', 'sys', 'subprocess', 'shutil', 'requests']
@@ -480,7 +507,7 @@ def create_retrieval_chain(df: pd.DataFrame, file_key: str) -> RunnableWithMessa
         chunks = text_splitter.split_documents(documents)
         
         # Create vector store
-        embeddings = OpenAIEmbeddings()
+        embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
         vectorstore = FAISS.from_documents(chunks, embeddings)
         
         # Create a retriever
@@ -562,7 +589,7 @@ def create_pandasai_df(df: pd.DataFrame) -> SmartDataframe:
     """
     try:
         # Ensure OpenAI API key is set
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = OPENAI_API_KEY
         if not api_key:
             raise ValueError("OpenAI API key not found in environment variables")
         
@@ -578,16 +605,31 @@ def create_pandasai_df(df: pd.DataFrame) -> SmartDataframe:
                 "save_charts": True,
                 "custom_whitelisted_dependencies": ["plotly", "pandas", "numpy", "plotly.express", "plotly.graph_objects"],
                 "custom_instructions": """
-                    ALWAYS use plotly for visualizations. DO NOT use matplotlib or seaborn.
-                    Always use px.bar(), px.line(), px.scatter(), etc. for creating charts.
-                    Always save the figure object as 'fig' and return it.
-                    Do not use any matplotlib functions at all.
-                    For bar charts of categorical data, use px.bar(df_grouped, x='category_column', y='value_column').
-                    For horizontal bar charts, add orientation='h' to px.bar() and swap x/y parameters.
-                    For line charts, use px.line(df, x='x_column', y='y_column').
-                    For scatter plots, use px.scatter(df, x='x_column', y='y_column').
-                    For histograms, use px.histogram(df, x='column').
-                    For pie charts, use px.pie(df, values='value_column', names='category_column').
+                    ALWAYS use plotly for visualizations. DO NOT use matplotlib or seaborn at all.
+                    NEVER import or use matplotlib or matplotlib.pyplot in your code.
+                    
+                    Use plotly.express (px) functions exclusively for visualizations:
+                    - For bar charts: px.bar(df_grouped, x='category_column', y='value_column')
+                    - For horizontal bar charts: px.bar(df_grouped, x='value_column', y='category_column', orientation='h')
+                    - For line charts: px.line(df, x='x_column', y='y_column')
+                    - For scatter plots: px.scatter(df, x='x_column', y='y_column')
+                    - For histograms: px.histogram(df, x='column')
+                    - For pie charts: px.pie(df, values='value_column', names='category_column')
+                    - For box plots: px.box(df, x='category_column', y='value_column')
+                    
+                    Always save the figure object as 'fig' and return it directly.
+                    For example:
+                    ```python
+                    import plotly.express as px
+                    # Analysis code here
+                    fig = px.bar(df_result, x='Category', y='Value')
+                    # Optional customization
+                    fig.update_layout(title='My Chart Title')
+                    # Return the figure
+                    return fig
+                    ```
+                    
+                    DO NOT use ANY matplotlib functions including plt.figure(), plt.plot(), plt.show(), plt.gca(), etc.
                 """
             }
         )

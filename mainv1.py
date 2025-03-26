@@ -19,7 +19,11 @@ import multiprocessing
 import dotenv
 
 # Load environment variables
-dotenv.load_dotenv()
+if "OPENAI_API_KEY" in st.secrets:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+else:
+    dotenv.load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # ----------------------
 # Page Initialization
