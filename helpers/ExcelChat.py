@@ -254,6 +254,9 @@ def execute_code_safely(code: str, df: pd.DataFrame) -> Dict[str, Any]:
         return result
     
     try:
+        # Log code execution for debugging
+        logger.info(f"Executing code: {code}")
+
         # Capture stdout
         with CaptureOutput() as captured:
             # Execute the code
@@ -262,41 +265,83 @@ def execute_code_safely(code: str, df: pd.DataFrame) -> Dict[str, Any]:
         
         # Look for specific result types
         
-        # Check for DataFrames
-        for var_name, var_value in local_vars.items():
-            if isinstance(var_value, pd.DataFrame) and var_name != 'df':
-                result["df_result"] = var_value
+        # Check for Analysis Result Variables - expanded list of common output variables
+        analysis_var_names = [
+            'result', 'output', 'summary', 'analysis', 'stats', 'metrics', 
+            'top_industries', 'grouped_data', 'sorted_df', 'results', 'top_10',
+            'top_10_industries', 'response', 'answer', 'final_result', 'data',
+            'aggregated', 'filtered', 'processed', 'calculated', 'ranked'
+        ]
+        
+        # First try to find any analysis result
+        for var_name in analysis_var_names:
+            if var_name in local_vars and local_vars[var_name] is not None:
+                # If it's a DataFrame, prioritize as df_result
+                if isinstance(local_vars[var_name], pd.DataFrame):
+                    result["df_result"] = local_vars[var_name]
+                else:
+                    # Otherwise store as general result
+                    result["result"] = local_vars[var_name]
                 break
         
+        # Check for DataFrames with standard naming patterns
+        df_var_patterns = ['df_', '_df', 'dataframe', 'data_', 'filtered', 'sorted', 'grouped']
+        for var_name, var_value in local_vars.items():
+            if isinstance(var_value, pd.DataFrame) and var_name != 'df':
+                # Check if this might be a result DataFrame based on naming
+                is_result_df = any(pattern in var_name.lower() for pattern in df_var_patterns)
+                if is_result_df or result["df_result"] is None:
+                    result["df_result"] = var_value
+                    # If this seems like a primary result, stop looking
+                    if is_result_df:
+                        break
+        
         # If no explicit DataFrame was found but 'df' was modified
-        if result["df_result"] is None and not local_vars["df"].equals(df):
+        if result["df_result"] is None and 'df' in local_vars and not local_vars["df"].equals(df):
             result["df_result"] = local_vars["df"]
         
-        # Check for Plotly figures first (preferred)
-        if 'fig' in local_vars and isinstance(local_vars['fig'], go.Figure):
-            result["plot"] = local_vars['fig']
-            result["plot_type"] = "plotly"
-        # Then check for other variables that might be Plotly figures
-        elif any(isinstance(local_vars[var_name], go.Figure) for var_name in local_vars if isinstance(var_name, str)):
+        # Check for Plotly figures with various names
+        fig_var_names = ['fig', 'figure', 'plot', 'chart', 'vis', 'visualization', 'graph']
+        for var_name in fig_var_names:
+            if var_name in local_vars and isinstance(local_vars[var_name], go.Figure):
+                result["plot"] = local_vars[var_name]
+                result["plot_type"] = "plotly"
+                break
+                
+        # Generic check for any Plotly figure if none found by name
+        if result["plot"] is None:
             for var_name, var_value in local_vars.items():
                 if isinstance(var_name, str) and isinstance(var_value, go.Figure):
                     result["plot"] = var_value
                     result["plot_type"] = "plotly"
                     break
-        # Only then check for Matplotlib figures
-        elif plt.get_fignums():
+                    
+        # Only check for Matplotlib figures if no Plotly figure found
+        if result["plot"] is None and plt.get_fignums():
             fig = plt.gcf()
             result["plot"] = fig
             result["plot_type"] = "matplotlib"
-            # Don't close the figure here, we'll render it with st.pyplot()
-        
-        # Check for other result variables
-        result_var_names = ['result', 'output', 'summary', 'analysis']
-        for var_name in result_var_names:
-            if var_name in local_vars:
-                result["result"] = local_vars[var_name]
-                break
-        
+            
+        # If no result was found but we have stdout, try to extract information from it
+        if result["result"] is None and result["df_result"] is None and result["plot"] is None:
+            stdout = result["stdout"]
+            if stdout and len(stdout.strip()) > 0:
+                # For tabular data in stdout, try to convert to DataFrame
+                if '\n' in stdout and '\t' in stdout or ',' in stdout:
+                    try:
+                        # Try to parse as CSV
+                        result["df_result"] = pd.read_csv(StringIO(stdout), sep=None, engine='python')
+                    except:
+                        # If parsing failed, just use as text result
+                        result["result"] = stdout.strip()
+                else:
+                    result["result"] = stdout.strip()
+                    
+        # Log the execution results for debugging
+        logger.info(f"Execution results: df_result={result['df_result'] is not None}, " 
+                   f"plot={result['plot_type'] if result['plot'] is not None else None}, "
+                   f"result={result['result'] is not None}")
+                    
         return result
     
     except Exception as e:

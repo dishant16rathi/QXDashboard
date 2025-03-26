@@ -22,9 +22,9 @@ import traceback
 
 # Load environment variables
 dotenv.load_dotenv()
+OPEN_AI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-
-llm = OpenAI(api_token='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')
+llm = OpenAI(api_token=OPEN_AI_API_KEY)
 
 
 def ai_dashboard():
