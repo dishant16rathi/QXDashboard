@@ -21,7 +21,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from pandasai import SmartDataframe
 from pandasai.llm import OpenAI as PandasAI_OpenAI
-from openai import OpenAI
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
@@ -586,109 +585,32 @@ def create_pandasai_df(df):
     Returns:
         SmartDataframe: The enhanced DataFrame with AI capabilities.
     """
-        
-    return df
-
-def generate_visualization_code(prompt: str, df: pd.DataFrame) -> str:
-    """
-    Use OpenAI directly to generate Python code for data visualization based on user prompt.
-    
-    Args:
-        prompt: The user's visualization request
-        df: The pandas DataFrame to visualize
-        
-    Returns:
-        Generated Python code for visualization
-    """
     try:
         # Ensure OpenAI API key is set
         api_key = OPENAI_API_KEY
         if not api_key:
             raise ValueError("OpenAI API key not found in environment variables")
         
-        # Create ChatOpenAI instance
-        llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0,
-            api_key=api_key
+        llm = PandasAI_OpenAI(api_token=api_key)
+        
+        smart_df = SmartDataframe(
+            df,
+            config={
+                "llm": llm,
+                "enable_cache": True,
+                "verbose": True,
+                # "open_charts": True,
+                "save_charts": False,
+                "custom_whitelisted_dependencies": ["streamlit", "pandas", "numpy", "plotly", "altair"]
+            }
         )
         
-        # Create context about the dataframe
-        df_info = {
-            "shape": str(df.shape),
-            "columns": str(df.columns.tolist()),
-            "dtypes": str(df.dtypes.to_dict()),
-            "head": df.head(5).to_string(),
-            "description": df.describe().to_string()
-        }
-        
-        # Create system message with visualization guidelines
-        system_message = """You are an expert data visualization assistant. 
-        Your task is to generate Python code that creates visualizations based on user requests.
-        The code must use the DataFrame 'df' which is already loaded.
-        
-        GUIDELINES:
-        1. Always use Plotly (import plotly.express as px, import plotly.graph_objects as go) for visualization
-        2. Don't use matplotlib or seaborn
-        3. Create proper titles, labels, and legends
-        4. Make the visualization colorful and professional
-        5. Return ONLY the Python code, nothing else
-        6. The code should be complete and ready to execute
-        7. Don't include code to display the plot (like plt.show() or fig.show())
-        8. Make sure every plot has a descriptive title
-        9. Include insights or findings in the plot title or caption
-        """
-        
-        # User message with dataframe info and visualization request
-        user_message = f"""
-        I have a pandas DataFrame with the following information:
-        
-        Shape: {df_info['shape']}
-        Columns: {df_info['columns']}
-        Data Types: {df_info['dtypes']}
-        
-        Sample data:
-        {df_info['head']}
-        
-        Statistical summary:
-        {df_info['description']}
-        
-        VISUALIZATION REQUEST: {prompt}
-        
-        Generate Python code to create this visualization using the DataFrame 'df'.
-        """
-        
-        # Get response from OpenAI
-        messages = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_message}
-        ]
-        
-        response = llm.invoke(messages)
-        
-        # Extract code from response
-        code = response.content
-        
-        # If the response contains code blocks, extract them
-        if "```python" in code:
-            code_blocks = re.findall(r"```python\n(.*?)\n```", code, re.DOTALL)
-            if code_blocks:
-                return code_blocks[0]
-        
-        # If no code blocks with ```python tag, look for general code blocks
-        if "```" in code:
-            code_blocks = re.findall(r"```\n(.*?)\n```", code, re.DOTALL)
-            if code_blocks:
-                return code_blocks[0]
-                
-        # If no code blocks found, return the whole response
-        return code
-        
+        return smart_df
     except Exception as e:
-        logger.error(f"Error generating visualization code: {str(e)}")
+        logger.error(f"Error creating PandasAI DataFrame: {str(e)}")
         logger.error(f"Error type: {type(e).__name__}")
-        return f"# Error generating visualization code: {str(e)}"
-
+        logger.error(f"Error details: {str(e)}")
+        raise
 
 def display_saved_charts() -> None:
     """
@@ -823,6 +745,7 @@ def ExcelChat_main():
         
         # Generate response if file has been uploaded
         if st.session_state.current_file and st.session_state.file_cache:
+            # file_key = f"{st.session_state.current_file}"
             file_key = f"{st.session_state.id}-{st.session_state.current_file}"
             
             if file_key in st.session_state.file_cache:
@@ -837,77 +760,209 @@ def ExcelChat_main():
                     
                     # Determine if this is a visualization request
                     viz_keywords = ["chart", "plot", "graph", "visualize", "visualization", 
-                                   "show me", "display", "bar chart", "line graph", "show",
+                                   "show me", "display", "bar chart", "line graph", 
                                    "histogram"]
                     is_viz_request = any(keyword in prompt.lower() 
                                         for keyword in viz_keywords)
                     
                     if is_viz_request:
+                        # Use PandasAI for visualization
                         try:
                             with st.spinner("Generating visualization..."):
-                                # Generate visualization code using OpenAI
-                                generated_code = generate_visualization_code(prompt, df)
+                                # Generate visualization with PandasAI
+                                result = smart_df.chat(prompt)
                                 
-                                # Execute the generated code
-                                execution_result = execute_code_safely(generated_code, df)
+                                # Check for newly created images in the exports/charts directory
+                                charts_dir = "exports/charts"
+                                existing_charts = set()
+                                if os.path.exists(charts_dir):
+                                    existing_charts = set([f for f in os.listdir(charts_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
                                 
-                                # Handle execution results
-                                if execution_result["error"]:
-                                    message_placeholder.write(f"❌ Error: {execution_result['error']}")
-                                else:
-                                    # Display plot if generated
-                                    if execution_result["plot"] is not None:
+                                # Handle result based on type
+                                if isinstance(result, dict) and 'type' in result and result['type'] == 'plot' and 'value' in result:
+                                    # It's a saved chart path in a dict
+                                    chart_path = result['value']
+                                    # Ensure it's absolute path
+                                    if not os.path.isabs(chart_path):
+                                        chart_path = os.path.abspath(chart_path)
+                                    
+                                    # Verify file exists
+                                    if os.path.exists(chart_path):
                                         message_placeholder.write("Here's the visualization based on your request:")
-                                        if execution_result["plot_type"] == "matplotlib":
-                                            st.pyplot(execution_result["plot"])
-                                        else:  # Plotly
-                                            st.plotly_chart(execution_result["plot"], use_container_width=True)
-                                        
-                                        # Add to chat history
+                                        st.image(chart_path, use_column_width=True)
                                         st.session_state.messages.append({
-                                            "role": "assistant",
-                                            "content": "Here's the visualization based on your request:",
-                                            "plot": execution_result["plot"]
+                                            "role": "assistant", 
+                                            "content": "Here's the visualization based on your request:", 
+                                            "saved_charts": [chart_path]
                                         })
                                     else:
-                                        # Display any other result
-                                        message_placeholder.write("Visualization generated, but no plot was found.")
-                        except Exception as e:
-                            message_placeholder.write(f"❌ Error generating visualization: {str(e)}")
-                    else:
-                        # Handle non-visualization requests (fallback to standard QA)
-                        try:
-                            with st.spinner("Processing your request..."):
-                                # Generate response code for non-visualization requests
-                                generated_code = generate_visualization_code(prompt, df)
-                                
-                                # Execute the generated code
-                                execution_result = execute_code_safely(generated_code, df)
-                                
-                                # Handle execution results
-                                if execution_result["error"]:
-                                    message_placeholder.write(f"❌ Error: {execution_result['error']}")
+                                        # Check if file exists in the exports/charts directory instead
+                                        alt_path = os.path.join("exports/charts", os.path.basename(chart_path))
+                                        if os.path.exists(alt_path):
+                                            message_placeholder.write("Here's the visualization based on your request:")
+                                            st.image(alt_path, use_column_width=True)
+                                            st.session_state.messages.append({
+                                                "role": "assistant", 
+                                                "content": "Here's the visualization based on your request:", 
+                                                "saved_charts": [alt_path]
+                                            })
+                                        else:
+                                            # Fall back to checking for any new charts
+                                            new_charts = []
+                                            if os.path.exists(charts_dir):
+                                                current_charts = set([f for f in os.listdir(charts_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                                                new_charts = list(current_charts - existing_charts)
+                                            
+                                            if new_charts:
+                                                chart_paths = [os.path.join(charts_dir, chart) for chart in new_charts]
+                                                message_placeholder.write("Here's the visualization based on your request:")
+                                                for chart_path in chart_paths:
+                                                    st.image(chart_path, use_column_width=True)
+                                                st.session_state.messages.append({
+                                                    "role": "assistant", 
+                                                    "content": "Here's the visualization based on your request:", 
+                                                    "saved_charts": chart_paths
+                                                })
+                                            else:
+                                                message_placeholder.write(f"Visualization was created but could not be displayed. Path: {chart_path}")
+
+                                # Handle any type of result
+                                elif hasattr(result, 'figure') or hasattr(result, 'plot'):
+                                    # If it's a figure/plot object
+                                    message_placeholder.write("Here's the visualization based on your request:")
+                                    st.plotly_chart(result, use_container_width=True)
+                                    st.session_state.messages.append({
+                                        "role": "assistant", 
+                                        "content": "Here's the visualization based on your request:", 
+                                        "plot": result
+                                    })
                                 else:
-                                    # Display DataFrame result if generated
-                                    if execution_result["df_result"] is not None:
-                                        message_placeholder.write("Here's the result of your query:")
-                                        st.dataframe(execution_result["df_result"])
-                                        
-                                        # Add to chat history
+                                    # Check for newly saved charts
+                                    new_charts = []
+                                    if os.path.exists(charts_dir):
+                                        current_charts = set([f for f in os.listdir(charts_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
+                                        new_charts = list(current_charts - existing_charts)
+                                    
+                                    if new_charts:
+                                        # If charts were saved during execution
+                                        chart_paths = [os.path.join(charts_dir, chart) for chart in new_charts]
+                                        message_placeholder.write("Here's the visualization based on your request:")
+                                        for chart_path in chart_paths:
+                                            st.image(chart_path, use_column_width=True)
                                         st.session_state.messages.append({
-                                            "role": "assistant",
-                                            "content": "Here's the result of your query:",
-                                            "df_result": execution_result["df_result"]
+                                            "role": "assistant", 
+                                            "content": "Here's the visualization based on your request:", 
+                                            "saved_charts": chart_paths
                                         })
                                     else:
-                                        # Display any other result
-                                        message_placeholder.write(str(execution_result["result"]))
+                                        # If it's any other type (string, dict, list, etc.)
+                                        message_placeholder.write(str(result))
                                         st.session_state.messages.append({
-                                            "role": "assistant",
-                                            "content": str(execution_result["result"])
+                                            "role": "assistant", 
+                                            "content": str(result)
                                         })
+                                
+                                # Add to LangChain message history as string
+                                if file_key in st.session_state.chat_histories:
+                                    history = st.session_state.chat_histories[file_key]
+                                    history.add_message(HumanMessage(content=prompt))
+                                    history.add_message(AIMessage(content=str(result)))
                         except Exception as e:
-                            message_placeholder.write(f"❌ Error processing your request: {str(e)}")
+                            # Fall back to LLM if PandasAI fails
+                            st.warning(f"PandasAI visualization failed, falling back to LLM: {str(e)}")
+                            config = RunnableConfig(configurable={"session_id": file_key})
+                            
+                            # Use spinner while generating response
+                            with st.spinner("Generating response..."):
+                                # Get response from chain
+                                result = chain.invoke({"question": prompt, "context": "", "chat_history": ""}, config=config)
+                                response = result.get("answer", "")
+                                
+                                # Process response by executing code and capturing output
+                                modified_response, execution_results = process_response_with_code_execution(response, df)
+                                
+                                # Update the message placeholder with the modified response
+                                message_placeholder.markdown(modified_response)
+                                
+                                # Display execution results
+                                for block_key, block_result in execution_results.items():
+                                    # Display DataFrame results
+                                    if block_result["df_result"] is not None:
+                                        st.dataframe(block_result["df_result"])
+                                    
+                                    # Display plot results
+                                    if block_result["plot"] is not None:
+                                        if hasattr(block_result["plot"], "savefig"):  # Matplotlib
+                                            st.pyplot(block_result["plot"])
+                                        else:  # Plotly
+                                            st.plotly_chart(block_result["plot"], use_container_width=True)
+                                
+                                # Display any saved charts
+                                if "saved_charts" in execution_results:
+                                    st.markdown("### Generated Charts:")
+                                    for chart_path in execution_results["saved_charts"]:
+                                        st.image(chart_path, use_column_width=True)
+                                
+                                # Add response to chat history
+                                st.session_state.messages.append({
+                                    "role": "assistant", 
+                                    "content": modified_response,
+                                    "df_result": next((r["df_result"] for r in execution_results.values() 
+                                                     if r["df_result"] is not None), None),
+                                    "plot": next((r["plot"] for r in execution_results.values() 
+                                                if r["plot"] is not None), None),
+                                    "saved_charts": execution_results.get("saved_charts", [])
+                                })
+                                
+                                # Add to LangChain message history
+                                if file_key in st.session_state.chat_histories:
+                                    history = st.session_state.chat_histories[file_key]
+                                    history.add_message(HumanMessage(content=prompt))
+                                    history.add_message(AIMessage(content=modified_response))
+                    else:
+                        # Standard QA with the chain
+                        config = RunnableConfig(configurable={"session_id": file_key})
+                        
+                        # Use spinner while generating response
+                        with st.spinner("Analyzing your data..."):
+                            # Get response from chain
+                            result = chain.invoke({"question": prompt, "context": "", "chat_history": ""}, config=config)
+                            response = result.get("answer", "")
+                            
+                            # Process response by executing code and capturing output
+                            modified_response, execution_results = process_response_with_code_execution(response, df)
+                            
+                            # Update the message placeholder with the modified response
+                            message_placeholder.markdown(modified_response)
+                            
+                            # Display execution results
+                            for block_key, block_result in execution_results.items():
+                                # Display DataFrame results
+                                if block_result["df_result"] is not None:
+                                    st.dataframe(block_result["df_result"])
+                                
+                                # Display plot results
+                                if block_result["plot"] is not None:
+                                    if hasattr(block_result["plot"], "savefig"):  # Matplotlib
+                                        st.pyplot(block_result["plot"])
+                                    else:  # Plotly
+                                        st.plotly_chart(block_result["plot"], use_container_width=True)
+                            
+                            # Add response to chat history
+                            st.session_state.messages.append({
+                                "role": "assistant", 
+                                "content": modified_response,
+                                "df_result": next((r["df_result"] for r in execution_results.values() 
+                                                 if r["df_result"] is not None), None),
+                                "plot": next((r["plot"] for r in execution_results.values() 
+                                            if r["plot"] is not None), None)
+                            })
+                            
+                            # Add to LangChain message history
+                            if file_key in st.session_state.chat_histories:
+                                history = st.session_state.chat_histories[file_key]
+                                history.add_message(HumanMessage(content=prompt))
+                                history.add_message(AIMessage(content=modified_response))
             else:
                 st.error("Something went wrong with the file processing. Please re-upload the file.")
         else:

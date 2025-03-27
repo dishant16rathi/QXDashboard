@@ -19,26 +19,24 @@ import multiprocessing
 import dotenv
 
 # Load environment variables
-if "OPENAI_API_KEY" in st.secrets:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-else:
-    dotenv.load_dotenv()
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# if "OPENAI_API_KEY" in st.secrets:
+#     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+# else:
+dotenv.load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # ----------------------
 # Page Initialization
 # ----------------------
 def page_initialization():
     st.set_page_config(page_title="Dashboard for Qx", page_icon="📊", layout="wide")
-    
+
     # Create a layout for the logo in the top left corner
     header_container = st.container()
     with header_container:
         cols = st.columns([0.15, 0.85])
         with cols[0]:
-            # You can replace "logo.png" with your actual image path
-            # You can use a URL or a local image in your project directory
-            st.image("logo.png", width=100)  # Adjust width as needed
+            st.image("assets/qxgglogo.png", width=100)  # Adjust width as needed
     
     # Custom CSS injection
     st.markdown("""
@@ -56,6 +54,9 @@ def page_initialization():
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 1rem;
         }
+        body {
+            background-color: #F6F9FC;
+        }
         .stButton>button {
             background: blue;
             color: white;
@@ -65,7 +66,7 @@ def page_initialization():
         .stSelectbox>div>div>div {
             border-radius: 8px;
         }
-        
+
         /* Position the logo container to appear at the top left */
         [data-testid="stAppViewContainer"] > div:first-child {
             position: relative;
@@ -356,6 +357,7 @@ def select_file_old():
 # Dashboard Page
 # ----------------------
 def dashboard_page():
+
     data_dict = st.session_state.get("dataframes_dict", {})
     if not data_dict:
         st.error("No data available. Please go back and select files.")
@@ -391,6 +393,7 @@ def dashboard_page():
     with st.spinner("Loading AI Assistant... This may take a moment as we analyze your data."):
         from helpers.ExcelChat import ExcelChat_main
         ExcelChat_main()
+
 
 # ----------------------
 # Main Function

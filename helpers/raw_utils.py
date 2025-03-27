@@ -1,36 +1,13 @@
-import io
-import re
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
-import os
-from datetime import datetime
-from pandasai import SmartDataframe
-from pandasai.llm import OpenAI
-from pandasai.responses.response_parser import ResponseParser
-from pandasai import Agent
 from streamlit_autorefresh import st_autorefresh
 import altair as alt
 import plotly.express as px
 import plotly.graph_objects as go
 import warnings
+
 warnings.filterwarnings("ignore")
-import dotenv
-import traceback
-
-# Load environment variables
-# Load environment variables
-if "OPENAI_API_KEY" in st.secrets:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-else:
-    dotenv.load_dotenv()
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-
-llm = OpenAI(api_token=OPENAI_API_KEY)
-
 
 def ai_dashboard():
     data_dict = st.session_state.get("dataframes_dict", {})
@@ -47,34 +24,28 @@ def ai_dashboard():
 
         # Show data preview in one expander
         with st.expander("Data Preview"):
-            st.dataframe(df.head())
+            st.dataframe(df)
         
-        # Create a separate expander for dataset information (not nested)
-        with st.expander("Dataset Information"):
-            buffer = io.StringIO()
-            df.info(buf=buffer)
-            st.text(buffer.getvalue())
+        # # Create a separate expander for dataset information (not nested)
+        # with st.expander("Dataset Information"):
+        #     buffer = io.StringIO()
+        #     df.info(buf=buffer)
+        #     st.text(buffer.getvalue())
             
-            st.write("#### Summary Statistics")
-            st.write(df.describe())
+        #     st.write("#### Summary Statistics")
+        #     st.write(df.describe())
             
-            st.write("#### Column Data Types")
-            st.write(pd.DataFrame(df.dtypes, columns=["Data Type"]))
+        #     st.write("#### Column Data Types")
+        #     st.write(pd.DataFrame(df.dtypes, columns=["Data Type"]))
             
-            # Show sample of each column type to understand the data better
-            st.write("#### Sample Values by Column Type")
-            for col in df.columns:
-                st.write(f"**{col}**: {df[col].iloc[:3].tolist()}")
+        #     # Show sample of each column type to understand the data better
+        #     st.write("#### Sample Values by Column Type")
+        #     for col in df.columns:
+        #         st.write(f"**{col}**: {df[col].iloc[:3].tolist()}")
                 
         # Analyze the dataset structure
         dataset_analysis, df_clean = analyze_dataset(df)
         
-        # Display the analysis to the user
-        # with st.expander("Dataset Analysis"):
-        #     st.markdown(dataset_analysis)
-                
-        # Since PandasAI has restrictions, let's just use our own visualization function
-        st.info("Creating visualizations based on data analysis...")
         create_basic_visualizations(df_clean)
         
 

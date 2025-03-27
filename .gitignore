@@ -2,3 +2,12 @@
 *.log
 exports/
 venv
+.streamlit/
+
+__pycache__/
+*.pyc
+*.pyo
+*.streamlit
+*.toml
+
+cache/
