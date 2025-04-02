@@ -20,11 +20,11 @@ def ai_dashboard():
     # st_autorefresh(interval=10000, key="ai_refresh")  # Refresh every 10 seconds
 
     for file_name, df in data_dict.items():
-        st.markdown(f'<p style="font-size:15px;">📂 AI Insights for {file_name}</p>', unsafe_allow_html=True)
+        # st.markdown(f'<p style="font-size:15px;">📂 AI Insights for {file_name}</p>', unsafe_allow_html=True)
 
         # Show data preview in one expander
-        with st.expander("Data Preview"):
-            st.dataframe(df)
+        # with st.expander("Data Preview"):
+        #     st.dataframe(df)
         
         # # Create a separate expander for dataset information (not nested)
         # with st.expander("Dataset Information"):
@@ -112,573 +112,18 @@ def analyze_dataset(df):
     return "\n".join(analysis), df_clean
 
 
-def create_basic_visualizations1(df):
-    """Create interactive creative visualizations using Streamlit charts.
-    Charts included:
-      1. Pie Chart
-      2. Donut Chart
-      3. Bar Graph
-      4. Frequency Polygon Chart
-      5. Waterfall Chart
-      6. Bubble Chart (for variable relationships)
-      7. Lollipop Chart
-      8. Connected Scatterplot
-      9. Stacked Area Chart
+st.markdown(
     """
-    # Get numeric and categorical columns
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    <style>
+    .st-emotion-cache-t74pzu {
+        background: #fff;
+        padding: 15px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-    if not numeric_cols:
-        st.warning("No numeric columns available for visualization.")
-        return
-
-    st.markdown("## Interactive Creative Visualizations")
-    
-    # Add visualization selector for user to choose which charts to display
-    viz_options = st.multiselect(
-        "Select visualizations to display:",
-        ["Bar Chart", "Pie Chart", "Stacked Bar Chart", "Donut Chart", "Frequency Chart", "Waterfall Chart", 
-         "Bubble Chart", "Lollipop Chart", "Connected Scatterplot", "Heatmap"],
-        default=["Bar Chart", "Pie Chart", "Stacked Bar Chart"]
-    )
-    
-    # Add column selectors for more interactivity
-    col1, col2 = st.columns(2)
-    with col1:
-        if categorical_cols:
-            selected_cat_col = st.selectbox("Select categorical column:", categorical_cols)
-        else:
-            selected_cat_col = None
-            st.info("No categorical columns available")
-    
-    with col2:
-        if len(numeric_cols) > 0:
-            selected_num_col = st.selectbox("Select primary numeric column:", numeric_cols)
-            if len(numeric_cols) > 1:
-                selected_num_col2 = st.selectbox("Select secondary numeric column:", 
-                                               [col for col in numeric_cols if col != selected_num_col])
-            else:
-                selected_num_col2 = selected_num_col
-        else:
-            st.error("No numeric columns available for visualization")
-            return
-    
-    # Bar Chart
-    if "Bar Chart" in viz_options:
-        st.markdown("### Interactive Bar Chart")
-        # Let user customize the chart
-        bar_type = st.radio("Bar chart type:", ["Regular", "Stacked", "Grouped"], horizontal=True)
-        top_n = st.slider("Number of categories to display:", 3, 15, 10)
-        
-        if selected_cat_col:
-            bar_data = df[selected_cat_col].value_counts().nlargest(top_n).reset_index()
-            bar_data.columns = [selected_cat_col, "Count"]
-            
-            if bar_type == "Regular":
-                fig = px.bar(bar_data, x=selected_cat_col, y="Count", 
-                            title=f"Bar Chart of Top {top_n} {selected_cat_col} Categories",
-                            color_discrete_sequence=px.colors.qualitative.Bold)
-            elif bar_type == "Stacked" and len(numeric_cols) > 1:
-                # For stacked, use the top categories and show multiple numeric values
-                top_cats = bar_data[selected_cat_col].tolist()
-                stacked_df = df[df[selected_cat_col].isin(top_cats)]
-                fig = px.bar(stacked_df, x=selected_cat_col, y=[selected_num_col, selected_num_col2], 
-                            title=f"Stacked Bar Chart by {selected_cat_col}",
-                            barmode="stack")
-            elif bar_type == "Grouped" and len(numeric_cols) > 1:
-                # For grouped, similar approach
-                top_cats = bar_data[selected_cat_col].tolist()
-                grouped_df = df[df[selected_cat_col].isin(top_cats)]
-                fig = px.bar(grouped_df, x=selected_cat_col, y=[selected_num_col, selected_num_col2], 
-                            title=f"Grouped Bar Chart by {selected_cat_col}",
-                            barmode="group")
-            else:
-                # Fallback to regular
-                fig = px.bar(bar_data, x=selected_cat_col, y="Count", 
-                            title=f"Bar Chart of Top {top_n} {selected_cat_col} Categories")
-        else:
-            # Fall-back: use value counts of selected numeric grouped into bins
-            bins = pd.cut(df[selected_num_col], bins=top_n)
-            bar_data = bins.value_counts().reset_index()
-            bar_data.columns = ["Bins", "Count"]
-            fig = px.bar(bar_data, x="Bins", y="Count", 
-                        title=f"Bar Chart of {selected_num_col} Bins")
-        
-        # Add more interactivity options
-        fig.update_layout(
-            hoverlabel=dict(
-                bgcolor="white",
-                font_size=16,
-                font_family="Rockwell"
-            )
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Pie Chart
-    if "Pie Chart" in viz_options:
-        st.markdown("### Interactive Pie Chart")
-        pie_top_n = st.slider("Number of categories for pie chart:", 3, 10, 5, key="pie_slider")
-        
-        if selected_cat_col:
-            pie_data = df[selected_cat_col].value_counts().nlargest(pie_top_n).reset_index()
-            pie_data.columns = [selected_cat_col, "Count"]
-            
-            # Add "Other" category for remaining values
-            other_count = df[selected_cat_col].value_counts().sum() - pie_data["Count"].sum()
-            if other_count > 0:
-                other_row = pd.DataFrame({selected_cat_col: ["Other"], "Count": [other_count]})
-                pie_data = pd.concat([pie_data, other_row], ignore_index=True)
-                
-            fig = px.pie(pie_data, values="Count", names=selected_cat_col, 
-                        title=f"Pie Chart of {selected_cat_col}",
-                        color_discrete_sequence=px.colors.sequential.Plasma_r)
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-        else:
-            # fallback to categorizing selected numeric as discrete bins
-            bins = pd.cut(df[selected_num_col], bins=6)
-            pie_data = bins.value_counts().reset_index()
-            pie_data.columns = ["Bins", "Count"]
-            fig = px.pie(pie_data, values="Count", names="Bins", 
-                        title=f"Pie Chart of {selected_num_col} Bins")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Donut Chart (modified pie chart)
-    if "Donut Chart" in viz_options:
-        st.markdown("### Interactive Donut Chart")
-        donut_top_n = st.slider("Number of categories for donut chart:", 3, 10, 5, key="donut_slider")
-        
-        if selected_cat_col:
-            donut_data = df[selected_cat_col].value_counts().nlargest(donut_top_n).reset_index()
-            donut_data.columns = [selected_cat_col, "Count"]
-            
-            # Add "Other" category for remaining values
-            other_count = df[selected_cat_col].value_counts().sum() - donut_data["Count"].sum()
-            if other_count > 0:
-                other_row = pd.DataFrame({selected_cat_col: ["Other"], "Count": [other_count]})
-                donut_data = pd.concat([donut_data, other_row], ignore_index=True)
-            
-            # Let user control the hole size
-            hole_size = st.slider("Hole size:", 0.0, 0.8, 0.4, step=0.1, key="hole_slider")
-            
-            fig = px.pie(donut_data, values="Count", names=selected_cat_col, 
-                        title=f"Donut Chart of {selected_cat_col}", 
-                        hole=hole_size,
-                        color_discrete_sequence=px.colors.sequential.Viridis)
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-        else:
-            bins = pd.cut(df[selected_num_col], bins=6)
-            donut_data = bins.value_counts().reset_index()
-            donut_data.columns = ["Bins", "Count"]
-            hole_size = st.slider("Hole size:", 0.0, 0.8, 0.4, step=0.1, key="hole_slider")
-            fig = px.pie(donut_data, values="Count", names="Bins", 
-                        title=f"Donut Chart of {selected_num_col} Bins", 
-                        hole=hole_size)
-        st.plotly_chart(fig, use_container_width=True)
-        
-    # Frequency Chart
-    if "Frequency Chart" in viz_options:
-        st.markdown("### Interactive Frequency Chart")
-        
-        freq_type = st.radio("Frequency chart type:", ["Polygon", "Histogram", "KDE"], horizontal=True)
-        num_bins = st.slider("Number of bins:", 5, 30, 15, key="freq_bins")
-        
-        if freq_type == "Polygon":
-            # Calculate histogram using numpy
-            hist_vals, bin_edges = np.histogram(df[selected_num_col].dropna(), bins=num_bins)
-            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-            freq_data = pd.DataFrame({ selected_num_col: bin_centers, "Frequency": hist_vals })
-            freq_poly = alt.Chart(freq_data).mark_line(point=True).encode(
-                x=alt.X(f"{selected_num_col}:Q", title=selected_num_col),
-                y=alt.Y("Frequency:Q", title="Frequency"),
-                tooltip=[selected_num_col, "Frequency"]
-            ).properties(title=f"Frequency Polygon of {selected_num_col}")
-            st.altair_chart(freq_poly, use_container_width=True)
-        elif freq_type == "Histogram":
-            fig = px.histogram(df, x=selected_num_col, nbins=num_bins,
-                              title=f"Histogram of {selected_num_col}")
-            fig.update_layout(bargap=0.1)
-            st.plotly_chart(fig, use_container_width=True)
-        elif freq_type == "KDE":
-            # KDE plot using plotly
-            kde_data = df[selected_num_col].dropna()
-            fig = px.density_contour(df, x=selected_num_col, title=f"KDE of {selected_num_col}")
-            fig.update_traces(contours_coloring="fill", contours_showlabels=True)
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Waterfall Chart
-    if "Waterfall Chart" in viz_options:
-        st.markdown("### Interactive Waterfall Chart")
-        # Let user choose quantile divisions
-        quantile_divisions = st.slider("Number of quantile divisions:", 3, 10, 5, key="quantile_slider")
-        q_values = np.linspace(0, 1, quantile_divisions)
-        
-        q = df[selected_num_col].quantile(q_values)
-        q_df = q.reset_index()
-        q_df.columns = ["Quantile", "Value"]
-        
-        # First measure is absolute, rest are relative
-        measures = ["absolute"] + ["relative"] * (len(q_df) - 1)
-        
-        # Allow user to customize colors
-        color_theme = st.selectbox("Color theme:", 
-                                  ["Blues", "Greens", "Reds", "Purples", "Oranges"],
-                                  key="waterfall_colors")
-        
-        increasing_color = f"rgb(0, 100, 150)" if color_theme == "Blues" else f"rgb(50, 150, 50)" if color_theme == "Greens" else "rgb(150, 50, 50)" if color_theme == "Reds" else "rgb(100, 50, 150)" if color_theme == "Purples" else "rgb(150, 100, 50)"
-        
-        fig = go.Figure(go.Waterfall(
-            measure = measures,
-            x = [f"{v:.2f}" for v in q_df["Quantile"]],
-            text = [f"{v:.2f}" for v in q_df["Value"]],
-            y = q_df["Value"],
-            connector = {"line": {"color": "rgb(63, 63, 63)"}},
-            increasing = {"marker": {"color": increasing_color}},
-            decreasing = {"marker": {"color": "rgba(100, 100, 100, 0.7)"}},
-        ))
-        fig.update_layout(title=f"Waterfall Chart of {selected_num_col} Quantiles")
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Bubble Chart
-    if "Bubble Chart" in viz_options and len(numeric_cols) >= 3:
-        st.markdown("### Interactive Bubble Chart")
-        
-        # Let user choose columns for bubble chart
-        x_col = st.selectbox("X-axis column:", numeric_cols, key="bubble_x")
-        y_col = st.selectbox("Y-axis column:", [col for col in numeric_cols if col != x_col], key="bubble_y")
-        size_col = st.selectbox("Size column:", [col for col in numeric_cols if col not in [x_col, y_col]], key="bubble_size")
-        
-        # Optional color column
-        if categorical_cols:
-            color_col = st.selectbox("Color by category:", ["None"] + categorical_cols, key="bubble_color")
-            if color_col != "None":
-                fig = px.scatter(
-                    df,
-                    x=x_col,
-                    y=y_col,
-                    size=df[size_col].abs(),
-                    color=color_col,
-                    hover_name=color_col if len(df[color_col].unique()) <= 50 else None,
-                    title=f"Bubble Chart: {x_col} vs {y_col} (Size: {size_col}, Color: {color_col})",
-                    opacity=0.7,
-                )
-            else:
-                fig = px.scatter(
-                    df,
-                    x=x_col,
-                    y=y_col,
-                    size=df[size_col].abs(),
-                    color=x_col,
-                    title=f"Bubble Chart: {x_col} vs {y_col} (Size: {size_col})",
-                    opacity=0.7,
-                )
-        else:
-            fig = px.scatter(
-                df,
-                x=x_col,
-                y=y_col,
-                size=df[size_col].abs(),
-                color=x_col,
-                title=f"Bubble Chart: {x_col} vs {y_col} (Size: {size_col})",
-                opacity=0.7,
-            )
-        
-        # Add trendline if requested
-        if st.checkbox("Show trendline", key="bubble_trendline"):
-            fig.update_layout(
-                shapes=[
-                    dict(
-                        type='line',
-                        xref='x', yref='y',
-                        x0=df[x_col].min(), 
-                        y0=np.polyval(np.polyfit(df[x_col].fillna(0), df[y_col].fillna(0), 1), df[x_col].min()),
-                        x1=df[x_col].max(), 
-                        y1=np.polyval(np.polyfit(df[x_col].fillna(0), df[y_col].fillna(0), 1), df[x_col].max()),
-                        line=dict(color='red', width=2, dash='dot')
-                    )
-                ]
-            )
-            
-        fig.update_layout(
-            xaxis=dict(showgrid=True, gridwidth=1, gridcolor='LightGray'),
-            yaxis=dict(showgrid=True, gridwidth=1, gridcolor='LightGray'),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    elif "Bubble Chart" in viz_options:
-        st.info("At least 3 numeric columns needed for the bubble chart.")
-
-    # Lollipop Chart
-    if "Lollipop Chart" in viz_options:
-        st.markdown("### Interactive Lollipop Chart")
-        lollipop_n = st.slider("Number of values to display:", 3, 15, 10, key="lollipop_slider")
-        
-        if selected_cat_col:
-            # Use categorical column
-            top_n = df[selected_cat_col].value_counts().nlargest(lollipop_n).reset_index()
-            top_n.columns = [selected_cat_col, "Count"]
-            
-            # Create lollipop chart with Plotly
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=top_n[selected_cat_col],
-                y=top_n["Count"],
-                mode='markers',
-                marker=dict(size=12, color='#FFA500'),
-                name='Count'
-            ))
-            fig.add_trace(go.Scatter(
-                x=top_n[selected_cat_col],
-                y=top_n["Count"],
-                mode='lines',
-                line=dict(color='#008080', width=2),
-                name='Connection'
-            ))
-            fig.update_layout(
-                title=f"Lollipop Chart: Top {lollipop_n} {selected_cat_col} Counts",
-                showlegend=False
-            )
-        else:
-            # Use numeric column bins
-            bins = pd.cut(df[selected_num_col], bins=lollipop_n)
-            top_n = bins.value_counts().reset_index()
-            top_n.columns = ["Bins", "Count"]
-            
-            # Convert Bins to string for better display
-            top_n["Bins"] = top_n["Bins"].astype(str)
-            
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=top_n["Bins"],
-                y=top_n["Count"],
-                mode='markers',
-                marker=dict(size=12, color='#FFA500'),
-                name='Count'
-            ))
-            fig.add_trace(go.Scatter(
-                x=top_n["Bins"],
-                y=top_n["Count"],
-                mode='lines',
-                line=dict(color='#008080', width=2),
-                name='Connection'
-            ))
-            fig.update_layout(
-                title=f"Lollipop Chart: {selected_num_col} Bins",
-                showlegend=False
-            )
-        
-        # Add rotation for x-axis labels if they're long
-        fig.update_layout(
-            xaxis=dict(tickangle=45)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Connected Scatterplot
-    if "Connected Scatterplot" in viz_options and len(numeric_cols) >= 2:
-        st.markdown("### Interactive Connected Scatterplot")
-        
-        # Let user select columns
-        x_col = st.selectbox("X-axis:", numeric_cols, key="scatter_x")
-        y_col = st.selectbox("Y-axis:", [col for col in numeric_cols if col != x_col], key="scatter_y")
-        
-        # Sort order and sample size
-        sort_by = st.radio("Sort by:", [x_col, y_col, "No sorting"], horizontal=True)
-        if df.shape[0] > 100:
-            use_sample = st.checkbox("Use sample (recommended for large datasets)", value=True)
-            sample_size = st.slider("Sample size:", 10, min(1000, df.shape[0]), 100) if use_sample else df.shape[0]
-            scatter_df = df.sample(sample_size) if use_sample else df
-        else:
-            scatter_df = df
-        
-        # Sort the data
-        if sort_by != "No sorting":
-            scatter_df = scatter_df.sort_values(sort_by)
-        
-        # Create connected scatterplot with Plotly
-        fig = go.Figure()
-        
-        # Add the lines
-        fig.add_trace(go.Scatter(
-            x=scatter_df[x_col],
-            y=scatter_df[y_col],
-            mode='lines',
-            line=dict(color='#7070DB', width=1.5),
-            name='Connection'
-        ))
-        
-        # Add the points
-        fig.add_trace(go.Scatter(
-            x=scatter_df[x_col],
-            y=scatter_df[y_col],
-            mode='markers',
-            marker=dict(size=8, color='#DB7070'),
-            name='Data Points'
-        ))
-        
-        fig.update_layout(
-            title=f"Connected Scatterplot: {x_col} vs {y_col}",
-            xaxis_title=x_col,
-            yaxis_title=y_col,
-            hovermode='closest'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    elif "Connected Scatterplot" in viz_options:
-        st.info("At least 2 numeric columns needed for the connected scatterplot.")
-        
-    # Heatmap
-    if "Heatmap" in viz_options and len(numeric_cols) > 1:
-        st.markdown("### Interactive Correlation Heatmap")
-        
-        # Let user choose correlation method
-        corr_method = st.radio("Correlation method:", ["pearson", "spearman", "kendall"], horizontal=True)
-        
-        # Select columns to include
-        heatmap_cols = st.multiselect(
-            "Columns to include in heatmap:",
-            numeric_cols,
-            default=numeric_cols[:min(8, len(numeric_cols))],
-            key="heatmapnumericalcols_select"
-        )
-        
-        if len(heatmap_cols) > 1:
-            correlation = df[heatmap_cols].corr(method=corr_method).round(2)
-            
-            # Create heatmap with plotly
-            fig = px.imshow(
-                correlation,
-                text_auto=True,
-                color_continuous_scale="RdBu_r",
-                zmin=-1, zmax=1,
-                title=f"{corr_method.capitalize()} Correlation Heatmap"
-            )
-            fig.update_layout(height=500)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("Please select at least 2 columns for the heatmap.")
-    
-    # Replace the Stacked Area Chart with Stacked Bar Chart implementation
-    if "Stacked Bar Chart" in viz_options:
-        st.markdown("### Interactive Stacked Bar Chart")
-        
-        # Auto-detect categorical columns for x-axis
-        if categorical_cols:
-            # Select columns for the chart
-            col1, col2 = st.columns(2)
-            with col1:
-                # Choose x-axis column with smart defaults
-                x_col = st.selectbox("X-axis (categorical):", categorical_cols, key="bar_x")
-            
-            with col2:
-                # Choose numeric columns for the stacked bars
-                if len(numeric_cols) > 0:
-                    stack_cols = st.multiselect(
-                        "Numeric columns to stack:",
-                        numeric_cols,
-                        default=numeric_cols[:min(4, len(numeric_cols))],
-                        key="numericalcols_select"
-                    )
-                else:
-                    st.warning("No numeric columns available for the stacked bar chart.")
-                    stack_cols = []
-            
-            # Let user customize the chart
-            top_n = st.slider("Number of categories to display:", 3, 20, 10, key="stacked_bar_top_n")
-            normalize = st.checkbox("Normalize to percentage", key="normalize_bars")
-            orientation = st.radio("Orientation:", ["Vertical", "Horizontal"], horizontal=True, key="bar_orientation")
-            color_scheme = st.selectbox(
-                "Color scheme:",
-                ["Viridis", "Plasma", "Inferno", "Magma", "Cividis", "Turbo"],
-                key="stack_bar_colors"
-            )
-            
-            # Check if we have required data
-            if stack_cols and x_col:
-                # Prepare data
-                # Get the top N categories by count
-                top_categories = df[x_col].value_counts().nlargest(top_n).index.tolist()
-                
-                # Filter the dataframe to include only these categories
-                chart_data = df[df[x_col].isin(top_categories)].copy()
-                
-                # Select only the columns we need
-                chart_data = chart_data[[x_col] + stack_cols].copy()
-                
-                # Handle missing data
-                for col in stack_cols:
-                    chart_data[col] = chart_data[col].fillna(0)
-                
-                # Group by the categorical column and calculate the mean for each numeric column
-                agg_data = chart_data.groupby(x_col)[stack_cols].mean().reset_index()
-                
-                # Sort by total value for better visualization
-                agg_data['_total'] = agg_data[stack_cols].sum(axis=1)
-                agg_data = agg_data.sort_values('_total', ascending=False).drop(columns=['_total'])
-                
-                # Normalize if requested
-                if normalize:
-                    # Calculate row sums for normalization
-                    row_sums = agg_data[stack_cols].sum(axis=1)
-                    # Normalize each column by dividing by row sum
-                    for col in stack_cols:
-                        agg_data[col] = agg_data[col].div(row_sums) * 100
-                
-                # Create the stacked bar chart
-                if orientation == "Vertical":
-                    fig = px.bar(
-                        agg_data, 
-                        x=x_col, 
-                        y=stack_cols,
-                        title=f"Stacked Bar Chart: {x_col} vs {', '.join(stack_cols[:3])}{' and more' if len(stack_cols) > 3 else ''}",
-                        color_discrete_sequence=getattr(px.colors.sequential, color_scheme),
-                        barmode='stack'
-                    )
-                else:  # Horizontal
-                    fig = px.bar(
-                        agg_data, 
-                        y=x_col, 
-                        x=stack_cols,
-                        title=f"Horizontal Stacked Bar Chart: {x_col} vs {', '.join(stack_cols[:3])}{' and more' if len(stack_cols) > 3 else ''}",
-                        color_discrete_sequence=getattr(px.colors.sequential, color_scheme),
-                        barmode='stack',
-                        orientation='h'
-                    )
-                
-                # Customize layout
-                fig.update_layout(
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1
-                    ),
-                    margin=dict(l=40, r=40, t=80, b=40)
-                )
-                
-                # Add labels
-                if orientation == "Vertical":
-                    fig.update_layout(
-                        xaxis_title=x_col,
-                        yaxis_title="Percentage" if normalize else "Value"
-                    )
-                else:
-                    fig.update_layout(
-                        yaxis_title=x_col,
-                        xaxis_title="Percentage" if normalize else "Value"
-                    )
-                
-                # Rotate x-axis labels if they might be long
-                if orientation == "Vertical":
-                    fig.update_layout(xaxis=dict(tickangle=45))
-                
-                st.plotly_chart(fig, use_container_width=True)
-            elif not stack_cols:
-                st.warning("Please select at least one numeric column for the stacked bars.")
-            elif not x_col:
-                st.warning("Please select a categorical column for the x-axis.")
-        else:
-            st.warning("No categorical columns available for the Stacked Bar Chart. This chart requires at least one categorical column for the x-axis.")
-            
 def create_basic_visualizations(df):
     """Create interactive creative visualizations using Streamlit charts.
     Charts included:
@@ -701,7 +146,8 @@ def create_basic_visualizations(df):
         st.warning("No numeric columns available for visualization.")
         return
 
-    st.markdown("## Interactive Creative Visualizations")
+    # st.markdown("##### Interactive Creative Visualizations")
+    st.markdown("<h1 style='font-size:20px;'>Interactive Creative Visualizations</h1>", unsafe_allow_html=True)
     
     # Add visualization selector for user to choose which charts to display
     viz_options = st.multiselect(
@@ -758,7 +204,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Bar Chart
     if chart_type == "Bar Chart":
         with column:
-            st.markdown("### Interactive Bar Chart")
+            st.markdown("##### Interactive Bar Chart")
             # Let user customize the chart
             bar_type = st.radio(f"Bar chart type {chart_idx}:", ["Regular", "Stacked", "Grouped"], horizontal=True, key=f"bar_type_{chart_idx}")
             top_n = st.slider(f"Number of categories {chart_idx}:", 3, 15, 10, key=f"bar_top_n_{chart_idx}")
@@ -810,7 +256,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Pie Chart
     elif chart_type == "Pie Chart":
         with column:
-            st.markdown("### Interactive Pie Chart")
+            st.markdown("##### Interactive Pie Chart")
             pie_top_n = st.slider(f"Number of categories for pie chart {chart_idx}:", 3, 10, 5, key=f"pie_slider_{chart_idx}")
             
             if selected_cat_col:
@@ -839,7 +285,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Donut Chart
     elif chart_type == "Donut Chart":
         with column:
-            st.markdown("### Interactive Donut Chart")
+            st.markdown("##### Interactive Donut Chart")
             donut_top_n = st.slider(f"Number of categories for donut chart {chart_idx}:", 3, 10, 5, key=f"donut_slider_{chart_idx}")
             
             if selected_cat_col:
@@ -873,7 +319,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Frequency Chart
     elif chart_type == "Frequency Chart":
         with column:
-            st.markdown("### Interactive Frequency Chart")
+            st.markdown("##### Interactive Frequency Chart")
             
             freq_type = st.radio(f"Frequency chart type {chart_idx}:", ["Polygon", "Histogram", "KDE"], horizontal=True, key=f"freq_type_{chart_idx}")
             num_bins = st.slider(f"Number of bins {chart_idx}:", 5, 30, 15, key=f"freq_bins_{chart_idx}")
@@ -904,7 +350,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Waterfall Chart
     elif chart_type == "Waterfall Chart":
         with column:
-            st.markdown("### Interactive Waterfall Chart")
+            st.markdown("##### Interactive Waterfall Chart")
             # Let user choose quantile divisions
             quantile_divisions = st.slider(f"Number of quantile divisions {chart_idx}:", 3, 10, 5, key=f"quantile_slider_{chart_idx}")
             q_values = np.linspace(0, 1, quantile_divisions)
@@ -938,7 +384,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Bubble Chart
     elif chart_type == "Bubble Chart" and len(numeric_cols) >= 3:
         with column:
-            st.markdown("### Interactive Bubble Chart")
+            st.markdown("##### Interactive Bubble Chart")
             
             # Let user choose columns for bubble chart
             x_col = st.selectbox(f"X-axis column {chart_idx}:", numeric_cols, key=f"bubble_x_{chart_idx}")
@@ -1008,7 +454,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Lollipop Chart
     elif chart_type == "Lollipop Chart":
         with column:
-            st.markdown("### Interactive Lollipop Chart")
+            st.markdown("##### Interactive Lollipop Chart")
             lollipop_n = st.slider(f"Number of values to display {chart_idx}:", 3, 15, 10, key=f"lollipop_slider_{chart_idx}")
             
             if selected_cat_col:
@@ -1074,7 +520,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Connected Scatterplot
     elif chart_type == "Connected Scatterplot" and len(numeric_cols) >= 2:
         with column:
-            st.markdown("### Interactive Connected Scatterplot")
+            st.markdown("##### Interactive Connected Scatterplot")
             
             # Let user select columns
             x_col = st.selectbox(f"X-axis {chart_idx}:", numeric_cols, key=f"scatter_x_{chart_idx}")
@@ -1129,7 +575,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Heatmap
     elif chart_type == "Heatmap" and len(numeric_cols) > 1:
         with column:
-            st.markdown("### Interactive Correlation Heatmap")
+            st.markdown("##### Interactive Correlation Heatmap")
             
             # Let user choose correlation method
             corr_method = st.radio(f"Correlation method {chart_idx}:", ["pearson", "spearman", "kendall"], horizontal=True, key=f"corr_method_{chart_idx}")
@@ -1164,7 +610,7 @@ def create_chart(chart_type, column, df, selected_cat_col, selected_num_col, sel
     # Stacked Bar Chart
     elif chart_type == "Stacked Bar Chart":
         with column:
-            st.markdown("### Interactive Stacked Bar Chart")
+            st.markdown("##### Interactive Stacked Bar Chart")
             
             # Auto-detect categorical columns for x-axis
             if categorical_cols:

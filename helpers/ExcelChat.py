@@ -19,18 +19,11 @@ from plotly.subplots import make_subplots
 
 import streamlit as st
 from dotenv import load_dotenv
-from pandasai import SmartDataframe
-from pandasai.llm import OpenAI as PandasAI_OpenAI
-from openai import OpenAI
-
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.chains import ConversationalRetrievalChain
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.runnables import RunnableConfig
 from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import DataFrameLoader
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder, HumanMessagePromptTemplate
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
@@ -40,10 +33,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Load environment variables
-# if "OPENAI_API_KEY" in st.secrets:
-#     OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-# else:
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -99,84 +88,6 @@ def reset_chat() -> None:
             st.session_state.chat_histories[file_key].clear()
     st.session_state.context = None
     gc.collect()
-
-def display_csv(file_obj: Any) -> pd.DataFrame:
-    """
-    Display a CSV file preview and return the DataFrame.
-    
-    Args:
-        file_obj: The uploaded CSV file object.
-        
-    Returns:
-        pd.DataFrame: The pandas DataFrame containing the CSV data.
-    """
-    try:
-        st.markdown("### Data Preview")
-        
-        # Try different encodings
-        encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-        df = None
-        
-        for encoding in encodings:
-            try:
-                # Reset file pointer to beginning
-                file_obj.seek(0)
-                # Read the CSV file with current encoding
-                df = pd.read_csv(file_obj, encoding=encoding)
-                logger.info(f"Successfully read CSV with {encoding} encoding")
-                break
-            except UnicodeDecodeError:
-                logger.warning(f"Failed to read with {encoding} encoding")
-                continue
-            except Exception as e:
-                logger.error(f"Error reading CSV with {encoding} encoding: {str(e)}")
-                raise
-        
-        if df is None:
-            raise ValueError("Could not read CSV file with any supported encoding")
-        
-        # Display basic information about the DataFrame
-        st.write("**DataFrame Info:**")
-        st.write(f"Shape: {df.shape}")
-        st.write(f"Columns: {df.columns.tolist()}")
-        st.write(f"Data Types:\n{df.dtypes}")
-        
-        # Display the dataframe
-        st.dataframe(df)
-        
-        return df
-    except Exception as e:
-        logger.error(f"Error reading CSV file: {str(e)}")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error details: {str(e)}")
-        st.error(f"Error reading CSV file: {str(e)}")
-        st.error("Please check if your CSV file is properly formatted and not corrupted.")
-        raise
-
-def display_excel(file_obj: Any) -> pd.DataFrame:
-    """
-    Display an Excel file preview and return the DataFrame.
-    
-    Args:
-        file_obj: The uploaded Excel file object.
-        
-    Returns:
-        pd.DataFrame: The pandas DataFrame containing the Excel data.
-    """
-    try:
-        st.markdown("### Data Preview")
-        
-        # Read the Excel file
-        df = pd.read_excel(file_obj)
-        
-        # Display the dataframe
-        st.dataframe(df)
-        
-        return df
-    except Exception as e:
-        logger.error(f"Error reading Excel file: {str(e)}")
-        st.error(f"Error reading Excel file: {str(e)}")
-        raise
 
 def extract_code_from_response(response: str) -> List[str]:
     """
@@ -377,85 +288,6 @@ def execute_code_safely(code: str, df: pd.DataFrame) -> Dict[str, Any]:
         result["error"] = str(e)
         return result
 
-def process_response_with_code_execution(response: str, df: pd.DataFrame) -> Tuple[str, Dict[str, Any]]:
-    """
-    Process a response, extract and execute any code, and format the results.
-    
-    Args:
-        response: The text response potentially containing code.
-        df: DataFrame to execute the code against.
-        
-    Returns:
-        Tuple containing:
-            - Modified response with code results instead of code
-            - Dictionary of execution results
-    """
-    # Extract code blocks
-    code_blocks = extract_code_from_response(response)
-    
-    if not code_blocks:
-        return response, {}
-    
-    results = {}
-    modified_response = response
-    
-    # Check for newly created images in the exports/charts directory
-    charts_dir = "exports/charts"
-    existing_charts = set()
-    if os.path.exists(charts_dir):
-        existing_charts = set([f for f in os.listdir(charts_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
-    
-    for i, code in enumerate(code_blocks):
-        # Execute the code
-        execution_result = execute_code_safely(code, df)
-        results[f"block_{i}"] = execution_result
-        
-        # Replace code block with a summary of its execution
-        result_summary = ""
-        
-        if execution_result["error"]:
-            result_summary = f"❌ Code execution error: {execution_result['error']}"
-        else:
-            # Add DataFrame output for commands like df.head() even if there's no explicit result
-            if "df.head()" in code or "df.tail()" in code or "df.sample(" in code or "df.iloc" in code:
-                if execution_result["df_result"] is not None:
-                    result_summary = "**Data Preview:**"  # Will be followed by the dataframe visualization
-                else:
-                    # If we couldn't capture a dataframe result but the code should show one
-                    head_df = df.head() if "df.head()" in code else df.tail() if "df.tail()" in code else df.sample(5)
-                    execution_result["df_result"] = head_df
-                    result_summary = "**Data Preview:**"
-            elif execution_result["result"] is not None:
-                result_summary = f"Result: {execution_result['result']}"
-            
-            if execution_result["stdout"] and execution_result["stdout"].strip():
-                if result_summary:
-                    result_summary += "\n\n"
-                result_summary += f"**Output:** {execution_result['stdout'].strip()}"
-        
-        # Replace the code block with the result summary if needed
-        if result_summary:
-            code_pattern = r"```python\s*" + re.escape(code) + r"\s*```"
-            if re.search(code_pattern, modified_response, re.DOTALL):
-                modified_response = re.sub(code_pattern, result_summary, modified_response, flags=re.DOTALL)
-            else:
-                # Try generic code block pattern
-                generic_pattern = r"```\s*" + re.escape(code) + r"\s*```"
-                if re.search(generic_pattern, modified_response, re.DOTALL):
-                    modified_response = re.sub(generic_pattern, result_summary, modified_response, flags=re.DOTALL)
-                    
-    # Check for newly saved charts
-    new_charts = []
-    if os.path.exists(charts_dir):
-        current_charts = set([f for f in os.listdir(charts_dir) if f.endswith(('.png', '.jpg', '.jpeg'))])
-        new_charts = list(current_charts - existing_charts)
-    
-    # Add newly saved charts to the results
-    if new_charts:
-        results["saved_charts"] = [os.path.join(charts_dir, chart) for chart in new_charts]
-    
-    return modified_response, results
-
 def get_openai_model(model_name: str = "gpt-4o") -> ChatOpenAI:
     """
     Initialize and return the OpenAI model.
@@ -490,86 +322,88 @@ def create_retrieval_chain(df: pd.DataFrame, file_key: str) -> RunnableWithMessa
         RunnableWithMessageHistory: The initialized chain for question answering.
     """
     try:
-        # Ensure DataFrame is not empty and has data
-        if df.empty:
-            raise ValueError("DataFrame is empty")
+        # Display a full-page loader
+        with st.spinner("🔄 Loading data and creating embeddings. Please wait..."):
+            # Ensure DataFrame is not empty and has data
+            if df.empty:
+                raise ValueError("DataFrame is empty")
         
-        # Convert DataFrame to string representation for document creation
-        df_str = df.to_string()
-        
-        # Create documents from DataFrame
-        documents = [Document(page_content=df_str, metadata={"source": file_key})]
-        
-        # Split text into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=100
-        )
-        chunks = text_splitter.split_documents(documents)
-        
-        # Create vector store
-        embeddings = OpenAIEmbeddings()
-        vectorstore = FAISS.from_documents(chunks, embeddings)
-        
-        # Create a retriever
-        retriever = vectorstore.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 5}
-        )
-        
-        # Create LLM chain
-        llm = get_openai_model()
-        
-        # Create custom prompt that emphasizes code execution
-        qa_prompt = ChatPromptTemplate.from_messages([
-            HumanMessagePromptTemplate.from_template("""
-            You are an expert data analyst helping to analyze a dataset. You will be given a question about the data.
-
-            Previous conversation:
-            {chat_history}
+            # Convert DataFrame to string representation for document creation
+            df_str = df.to_string()
             
-            Context information from the file is below:
-            ---
-            {context}
-            ---
+            # Create documents from DataFrame
+            documents = [Document(page_content=df_str, metadata={"source": file_key})]
             
-            IMPORTANT: The user has already uploaded a DataFrame which is available as the variable 'df'. This DataFrame ALREADY CONTAINS ALL THE NECESSARY DATA for analysis. 
-            You can use this DataFrame to answer the user's questions. If you need to perform any data processing or analysis, you can do so directly on this DataFrame.
-            1. The DataFrame is already defined as variable 'data' - DO NOT redefine it or try to access it as dfs[0]
-            2. If visualization is needed, use Streamlit native charts (st.bar_chart, st.line_chart) whenever possible.
-            3. For more complex visualizations, use Plotly (px.line, px.bar, px.scatter, etc.) or Altair.
-            4. Keep your answer concise and data-focused.
-            5. For Plotly charts, always use st.plotly_chart(fig, use_container_width=True)
-            6. For Altair charts, always use st.altair_chart(chart, use_container_width=True)
-            7. Ensure visualizations have clear titles and labels.
-            8. DO NOT use matplotlib or seaborn for visualizations.
-            9. DO NOT create new DataFrames using `dfs[0]` - the DataFrame is already available as 'data'
-            10. Always use the variable name 'data' to refer to the DataFrame - not 'df'
-            11. DO NOT use plt.show() - use Streamlit's display functions instead
+            # Split text into chunks
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=250
+            )
+            chunks = text_splitter.split_documents(documents)
+            
+            # Create vector store
+            embeddings = OpenAIEmbeddings()
+            vectorstore = FAISS.from_documents(chunks, embeddings)
+            
+            # Create a retriever
+            retriever = vectorstore.as_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 5}
+            )
+            
+            # Create LLM chain
+            llm = get_openai_model()
+            
+            # Create custom prompt that emphasizes code execution
+            qa_prompt = ChatPromptTemplate.from_messages([
+                HumanMessagePromptTemplate.from_template("""
+                You are an expert data analyst helping to analyze a dataset. You will be given a question about the data.
 
-            User Question: {question}
-            """)
-        ])
-        
-        # Create chain with updated parameters
-        chain = ConversationalRetrievalChain.from_llm(
-            llm=llm,
-            retriever=retriever,
-            combine_docs_chain_kwargs={"prompt": qa_prompt},
-            return_source_documents=True,
-            return_generated_question=True
-        )
-        
-        # Wrap the chain with message history capabilities
-        chain_with_history = RunnableWithMessageHistory(
-            chain,
-            get_message_history,
-            input_messages_key="question",
-            history_messages_key="chat_history",
-            output_messages_key="answer",
-        )
-        
-        return chain_with_history
+                Previous conversation:
+                {chat_history}
+                
+                Context information from the file is below:
+                ---
+                {context}
+                ---
+                
+                IMPORTANT: The user has already uploaded a DataFrame which is available as the variable 'df'. This DataFrame ALREADY CONTAINS ALL THE NECESSARY DATA for analysis. 
+                You can use this DataFrame to answer the user's questions. If you need to perform any data processing or analysis, you can do so directly on this DataFrame.
+                1. The DataFrame is already defined as variable 'data' - DO NOT redefine it or try to access it as dfs[0]
+                2. If visualization is needed, use Streamlit native charts (st.bar_chart, st.line_chart) whenever possible.
+                3. For more complex visualizations, use Plotly (px.line, px.bar, px.scatter, etc.) or Altair.
+                4. Keep your answer concise and data-focused.
+                5. For Plotly charts, always use st.plotly_chart(fig, use_container_width=True)
+                6. For Altair charts, always use st.altair_chart(chart, use_container_width=True)
+                7. Ensure visualizations have clear titles and labels.
+                8. DO NOT use matplotlib or seaborn for visualizations.
+                9. DO NOT create new DataFrames using `dfs[0]` - the DataFrame is already available as 'data'
+                10. Always use the variable name 'data' to refer to the DataFrame - not 'df'
+                11. DO NOT use plt.show() - use Streamlit's display functions instead
+
+                User Question: {question}
+                """)
+            ])
+            
+            # Create chain with updated parameters
+            chain = ConversationalRetrievalChain.from_llm(
+                llm=llm,
+                retriever=retriever,
+                combine_docs_chain_kwargs={"prompt": qa_prompt},
+                return_source_documents=True,
+                return_generated_question=True
+            )
+            
+            # Wrap the chain with message history capabilities
+            chain_with_history = RunnableWithMessageHistory(
+                chain,
+                get_message_history,
+                input_messages_key="question",
+                history_messages_key="chat_history",
+                output_messages_key="answer",
+            )
+            
+            return chain_with_history
     except Exception as e:
         logger.error(f"Error creating retrieval chain: {str(e)}")
         logger.error(f"Error type: {type(e).__name__}")
@@ -764,6 +598,19 @@ def initialize_loaded_data():
     
     return True
 
+st.markdown(
+    """
+    <style>
+    .st-emotion-cache-t74pzu {
+        background: #fff;
+        padding: 15px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 def ExcelChat_main():
     """Main application function."""
     if "id" not in st.session_state:
@@ -775,10 +622,8 @@ def ExcelChat_main():
         st.session_state.current_file = None
         st.session_state.chat_histories = {}
 
-    col1, col2 = st.columns([6, 1])
-    
-    with col2:
-        st.button("Reset Chat ↺", on_click=reset_chat)
+    # with col2:
+    #     st.button("Reset Chat ↺", on_click=reset_chat)
     
     # Initialize data that's already loaded
     success = initialize_loaded_data()
@@ -811,6 +656,19 @@ def ExcelChat_main():
                 for chart_path in message["saved_charts"]:
                     if os.path.exists(chart_path):
                         st.image(chart_path, use_column_width=True)
+    
+
+    # Input container for chat input and reset button
+    # st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
+    
+    # # Chat input box
+    # prompt = st.text_input("Ask me about your data...", key="chat_input", label_visibility="collapsed")
+    
+    # # Reset button
+    # if st.button("Reset ↺", on_click=reset_chat, key="reset_chat_bottom"):
+    #     pass
+    
+    # st.markdown('</div>', unsafe_allow_html=True)
     
     # Accept user input
     if prompt := st.chat_input("Ask me about your data..."):
@@ -913,7 +771,7 @@ def ExcelChat_main():
         else:
             # No file uploaded yet
             with st.chat_message("assistant"):
-                missing_file_message = "Please upload a data file first using the sidebar. I need data to answer your questions."
+                missing_file_message = "Please upload a data file first. I need data to answer your questions."
                 st.warning(missing_file_message)
                 st.session_state.messages.append({
                     "role": "assistant", 
