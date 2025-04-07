@@ -15,37 +15,9 @@ def ai_dashboard():
     if not data_dict:
         st.error("No data available. Please go back and select files.")
         return
-    
-    # Auto-refresh every 10 seconds to update AI insights
-    # st_autorefresh(interval=10000, key="ai_refresh")  # Refresh every 10 seconds
 
     for file_name, df in data_dict.items():
-        # st.markdown(f'<p style="font-size:15px;">📂 AI Insights for {file_name}</p>', unsafe_allow_html=True)
-
-        # Show data preview in one expander
-        # with st.expander("Data Preview"):
-        #     st.dataframe(df)
-        
-        # # Create a separate expander for dataset information (not nested)
-        # with st.expander("Dataset Information"):
-        #     buffer = io.StringIO()
-        #     df.info(buf=buffer)
-        #     st.text(buffer.getvalue())
-            
-        #     st.write("#### Summary Statistics")
-        #     st.write(df.describe())
-            
-        #     st.write("#### Column Data Types")
-        #     st.write(pd.DataFrame(df.dtypes, columns=["Data Type"]))
-            
-        #     # Show sample of each column type to understand the data better
-        #     st.write("#### Sample Values by Column Type")
-        #     for col in df.columns:
-        #         st.write(f"**{col}**: {df[col].iloc[:3].tolist()}")
-                
-        # Analyze the dataset structure
         dataset_analysis, df_clean = analyze_dataset(df)
-        
         create_basic_visualizations(df_clean)
         
 

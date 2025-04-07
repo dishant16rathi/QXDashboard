@@ -101,7 +101,7 @@ def page_initialization():
                 st.image("assets/qxgglogo.png", width=70)  # Slightly smaller logo
             with text_col:
                 st.markdown(
-                    '<h1 style="display: inline; color: #292759; font-size: 34px; '
+                    '<h1 style="display: inline; color: #292759; font-size: 30px; '
                     'font-weight: 700;">AI DASHBOARD</h1>',
                     unsafe_allow_html=True
                 )
@@ -170,7 +170,9 @@ def page_initialization():
             #         st.dataframe(df)
 
             # Call the main function for the assistant
-            from helpers.ExcelChat import ExcelChat_main
+            # from helpers.ExcelChat import ExcelChat_main
+            # ExcelChat_main()
+            from helpers.rag_chat import ExcelChat_main
             ExcelChat_main()
 
 def switch_page(page):
@@ -268,7 +270,7 @@ def select_file():
         """,
         unsafe_allow_html=True
     )
-    st.markdown("<h1 style='font-size:20px;'>📂 Upload Your File</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='font-size:19px;'>📂 Upload Your File</h1>", unsafe_allow_html=True)
     
     # Display already loaded file if it exists
     existing_files = st.session_state.get("dataframes_dict", {})
